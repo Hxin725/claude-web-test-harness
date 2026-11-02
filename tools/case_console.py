@@ -30,6 +30,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gate_review import parse_md, resolve_task_dir  # noqa: E402
+# 顶层导入，不要挪进函数：qa_console 的代码指纹按「启动后 import 进来的 tools/*.py」算，
+# 用到时才 import 会让指纹集合在启动后变化，页面一直误报"代码已过期"
+from case_ids import case_ids_from_doc  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "artifacts" / "_runs"
@@ -109,11 +112,46 @@ def read_jsonl(p: Path) -> list[dict]:
     return out
 
 
+_DOC_IDX = {"sig": None, "map": {}}
+
+
+def _doc_case_index() -> dict:
+    """测试函数 → 用例 ID（静态读 tests/ 下各文件的 docstring）。
+
+    给台账里 case_ids 为空的历史记录补用例号：早期台账插件的正则认不出 TC-SRCH-FLT-01a / TC-R2-054 这类 ID，
+    那些执行记录没挂上用例，不用重跑。按文件修改时间缓存，测试文件不变就不重扫。
+    """
+    import ast
+    import warnings
+    files = sorted((ROOT / "tests").rglob("test_*.py"))
+    sig = tuple((str(f), f.stat().st_mtime) for f in files)
+    if _DOC_IDX["sig"] == sig:
+        return _DOC_IDX["map"]
+    out = {}
+    for f in files:
+        try:
+            with warnings.catch_warnings():          # 测试文件里有 '\d' 之类的转义，ast 会刷 SyntaxWarning，与这里无关
+                warnings.simplefilter("ignore")
+                tree = ast.parse(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        rel = f.relative_to(ROOT).as_posix()
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test_"):
+                ids = case_ids_from_doc(ast.get_docstring(n) or "")
+                if ids:
+                    out[f"{rel}::{n.name}"] = ids
+    _DOC_IDX.update(sig=sig, map=out)
+    return out
+
+
 def collect_runs(case_ids: set[str]) -> dict:
     """把两个台账按用例 ID 归拢，各自按时间倒序。"""
     auto, manual = defaultdict(list), defaultdict(list)
+    idx = _doc_case_index()
     for r in read_jsonl(AUTO):
-        for cid in (r.get("case_ids") or []):
+        ids = r.get("case_ids") or idx.get((r.get("nodeid") or "").split("[")[0], [])
+        for cid in ids:
             if cid in case_ids:
                 auto[cid].append(r)
     for r in read_jsonl(MANUAL):

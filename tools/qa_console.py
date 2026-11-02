@@ -4,10 +4,15 @@
 为什么合并：原先 GATE 0 评审台和用例执行台各起一个端口，一个版本十个需求
 就要开二十个端口，荒谬。改成单端口 + 三级导航：
 
-    版本（v2 / v1 / 未归版）→ 需求（task）→ 视图（评审 / 执行）
+    版本（v2 / v1 / 未归版）→ 需求（task）→ 视图（解构清单 / 评审 / 执行）
 
-数据来源一律只读，写入只落两类台账（都只增不改）：
+解构清单：decomp.md 各张表的全貌，默认按「模块 → 功能点 → 控件 / 字段 / 规则 / 缺口」展示，
+每行再放到「设计明确度 × 验证进度」两条轴上，数据层见 tools/decomp_console.py。
+我来补充：「按模块看」里每条缺口旁边直接填「我知道的答案」，按行存 gap_fills.json，数据层见 tools/gap_fill.py。
+
+数据来源一律只读，写入只落这几类台账（都只增不改）：
     artifacts/<task>/gate0_verdicts.json     ← GATE 0 裁决
+    artifacts/<task>/gap_fills.json          ← 补缺口的答案（agent 读它回填 decomp.md）
     artifacts/_runs/{auto,manual}_runs.jsonl ← 执行记录
 （用户在 GATE 1 改用例是第三条写路径，走 tools/cases_edit.py，有快照有审计。）
 
@@ -36,7 +41,9 @@ try:
     from gate_review import paths, load_verdicts, save_verdicts      # noqa: E402,F401
     from gate_review_ui import build_cards                           # noqa: E402
     import case_console                                              # noqa: E402
+    import decomp_console                                            # noqa: E402
     import cases_edit                                                # noqa: E402
+    import gap_fill                                                  # noqa: E402
 except SyntaxError as _e:
     # 磁盘上的代码有语法错误：说清楚是哪个文件哪一行，而不是甩一屏 traceback。
     # `ensure` 走到这里时还没动过任何进程——正在跑的旧控制台不受影响。
@@ -142,8 +149,23 @@ def discover() -> dict:
             continue
         sfm, dfm, cfm = _fm(state), _fm(decomp), _fm(cases)
         views, badges = [], []
+        cc = None                     # 用例台账只解析一次，解构清单与执行台共用
+        if cases.exists():
+            try:
+                cc = case_console.build(d.name)
+            except Exception:
+                cc = None
 
         if decomp.exists():
+            views.append("decomp")
+            try:
+                ds = decomp_console.build(d.name, cc)["summary"]
+                if ds["gaps"]:
+                    badges.append({"k": "gap", "t": f"设计缺口 {ds['gaps']}"})
+                if cases.exists() and ds["uncovered"]:
+                    badges.append({"k": "warn", "t": f"未覆盖 {ds['uncovered']} 行"})
+            except Exception as e:
+                badges.append({"k": "warn", "t": f"解构表解析失败: {type(e).__name__}"})
             views.append("gate0")
             try:
                 st = dfm.get("status", "")
@@ -159,7 +181,8 @@ def discover() -> dict:
         if cases.exists():
             views.append("cases")
             try:
-                cc = case_console.build(d.name)
+                if cc is None:
+                    cc = case_console.build(d.name)
                 cs = cc["cases"]
                 ok = sum(1 for c in cs if c["auto_status"] in ("passed", "xfailed") or c["manual_status"] == "pass")
                 dv = sum(1 for c in cs if c["divergent"])
@@ -225,9 +248,14 @@ class Handler(BaseHTTPRequestHandler):
                                    "pid": os.getpid(), "started_at": STARTED_AT, "root": str(ROOT)})
             if p == "/api/index":
                 return self._json(discover())
-            m = re.match(r"^/api/(gate0|cases)/(.+)$", p)
+            m = re.match(r"^/api/(gate0|cases|decomp)/(.+)$", p)
             if m:
                 kind, task = m.group(1), m.group(2)
+                if kind == "decomp":
+                    d = decomp_console.build(task)
+                    if not d.get("error"):
+                        d["fills"] = gap_fill.load(task)      # 「我来补充」已填的答案，按行 key 存
+                    return self._json(d)
                 return self._json(build_cards(task) if kind == "gate0" else case_console.build(task))
             m = re.match(r"^/api/verdicts/(.+)$", p)
             if m:
@@ -271,6 +299,13 @@ class Handler(BaseHTTPRequestHandler):
                     data[cid]["rowvals"] = payload["rowvals"]
             save_verdicts(task, data)
             return self._json({"ok": True, "count": len(data)})
+
+        m = re.match(r"^/api/gapfill/(.+)$", p)
+        if m:
+            if not payload.get("gid"):
+                return self._json({"error": "gid required"}, 400)
+            data = gap_fill.save_one(m.group(1), payload["gid"], payload)
+            return self._json({"ok": True, "fill": data.get(payload["gid"])})
 
         m = re.match(r"^/api/case/(.+)$", p)
         if m:
@@ -329,6 +364,7 @@ select,button{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--
 color:var(--ink);border-radius:5px;padding:4px 9px}
 button:hover,select:hover{border-color:var(--ink3)}
 button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.nav select{max-width:100%;text-overflow:ellipsis}
 .sep{color:var(--ink3)}
 .kpi{display:flex;gap:14px;flex-wrap:wrap;margin-left:auto;font-size:12px;align-items:center}
 .helpbtn{font-size:12px;padding:4px 10px}
@@ -446,6 +482,124 @@ margin-bottom:12px;border-radius:0 4px 4px 0}
 .cbar{background:#fff4d6;color:#5b4300;border:1px solid #e8d49a;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13.5px;line-height:1.7}
 .cbar b{font-weight:600}
 .cbar ul{margin:6px 0 0;padding-left:20px;color:#6b5513}
+.k-gap{color:var(--gap)}
+/* 解构清单 */
+:root{--d-conf:#0f6f5c;--d-infer:#6b5aa6;--d-miss:#b26a00;--d-conflict:#b3261e;--d-ban:#8a96a0;
+--v-pass:#0f6f5c;--v-fail:#b3261e;--v-err:#c2410c;--v-defect:#6b5aa6;--v-notrun:#9aa6ae;--v-uncov:#d9a520}
+@media(prefers-color-scheme:dark){:root{--d-conf:#46b39b;--d-infer:#a693e0;--d-miss:#e3a33a;--d-conflict:#ef7a6e;--d-ban:#6f7f8a;
+--v-pass:#46b39b;--v-fail:#ef7a6e;--v-err:#f0915a;--v-defect:#a693e0;--v-notrun:#56656f;--v-uncov:#e9c046}}
+.dsec{background:var(--surf);border:1px solid var(--rule);border-radius:8px;padding:16px 18px;margin-bottom:16px}
+.dsec h3{margin:0 0 4px;font-size:15px}
+.dsec .sub{color:var(--ink3);font-size:12.5px;margin:0 0 12px}
+.dmeta{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin-bottom:14px}
+.dmeta b{color:var(--ink);font-weight:600}
+.ov{width:100%;border-collapse:collapse;font-size:13px}
+.ov th{text-align:left;font-weight:500;color:var(--ink3);font-size:11.5px;padding:0 8px 6px;white-space:nowrap}
+.ov td{padding:7px 8px;border-top:1px solid var(--rule);vertical-align:middle}
+.ov tr.click{cursor:pointer}.ov tr.click:hover td{background:var(--surf2)}
+.ov tr.sel td{background:color-mix(in srgb,var(--info) 9%,transparent)}
+.ov .num{font-variant-numeric:tabular-nums;text-align:right;width:44px}
+.bar{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--surf2);min-width:150px}
+.bar i{display:block;height:100%}
+.bar i+i{box-shadow:inset 1px 0 0 var(--surf)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--ink2);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.xt{border-collapse:collapse;font-size:12.5px}
+.xt th{font-weight:500;color:var(--ink3);font-size:11.5px;padding:4px 8px;text-align:center;white-space:nowrap}
+.xt th.rh{text-align:right}
+.xt td{width:72px;height:34px;text-align:center;border:1px solid var(--surf);font-variant-numeric:tabular-nums;cursor:pointer;border-radius:3px}
+.xt td.z{color:var(--ink3);opacity:.35;cursor:default}
+.xt td.hot{outline:2px solid var(--ink);outline-offset:-2px}
+.xt td:not(.z):hover{outline:2px solid var(--info);outline-offset:-2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.drow{border-top:1px solid var(--rule);padding:10px 2px}
+.drow:first-child{border-top:none}
+.drow .h{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.drow .rid{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink2);flex:none;width:62px;padding-top:1px}
+.drow .mt{flex:1;min-width:0}
+.drow .tags{display:flex;gap:6px;flex:none;align-items:center}
+.tg{font-size:11px;padding:1px 7px;border-radius:3px;white-space:nowrap;color:#fff}
+.tg.o{background:transparent;border:1px solid currentColor}
+.cs{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.cs a{font-family:"IBM Plex Mono",monospace;font-size:11px;padding:1px 6px;border-radius:3px;text-decoration:none;
+border:1px solid var(--rule);color:var(--ink2);background:var(--bg)}
+.cs a b{font-weight:500}
+.dd{margin:8px 0 2px 72px;display:grid;grid-template-columns:112px 1fr;gap:5px 12px;font-size:12.5px}
+.dd dt{color:var(--ink3);font-size:11.5px}.dd dd{margin:0;word-break:break-word}
+.dd code{background:var(--surf2);padding:0 4px;border-radius:3px}
+@media(max-width:700px){.dd{margin-left:0;grid-template-columns:1fr}.drow .rid{width:auto}.drow .h{flex-wrap:wrap}}
+.mx{overflow:auto;margin:6px 0 14px}
+.mx table{border-collapse:collapse;font-size:12px}
+.mx th,.mx td{border:1px solid var(--rule);padding:6px 8px;vertical-align:top;min-width:96px}
+.mx th{background:var(--surf2);font-weight:500;white-space:nowrap}
+.mx td.m-ok{background:color-mix(in srgb,var(--d-conf) 12%,transparent)}
+.mx td.m-inf{background:color-mix(in srgb,var(--d-infer) 14%,transparent)}
+.mx td.m-miss{background:color-mix(in srgb,var(--d-miss) 18%,transparent)}
+.mx td.m-ban{background:var(--surf2);color:var(--ink3)}
+.debt{display:grid;grid-template-columns:76px 1fr auto;gap:4px 12px;padding:8px 0;border-top:1px solid var(--rule);font-size:13px}
+.debt:first-child{border-top:none}
+.debt .di{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink2)}
+.debt .ds{font-size:12px;color:var(--ink3);max-width:340px}
+.debt.closed{opacity:.6}
+.srch{max-width:260px;margin:0}
+/* 解构清单 · 按模块看（默认视角：模块 → 功能 → 控件 / 字段 / 规则 / 缺口） */
+.intro h3{font-size:16px;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink2);font-size:13px}
+.legacy{border-left:3px solid var(--d-miss);background:var(--surf2);padding:9px 12px;border-radius:0 5px 5px 0;font-size:13px;margin-top:10px;color:var(--ink2)}
+.mod{background:var(--surf);border:1px solid var(--rule);border-radius:8px;margin-bottom:14px;overflow:hidden}
+.mh{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:14px 18px;cursor:pointer;background:var(--surf2)}
+.mh:hover{filter:brightness(.98)}
+.mh .mid{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink3)}
+.mh b{font-size:15.5px}
+.mh .ms{color:var(--ink2);font-size:13px;flex-basis:100%;margin-top:2px}
+.mh .me{color:var(--ink3);font-size:12px;flex-basis:100%}
+.cnt{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;font-size:12px}
+.cnt span{background:var(--surf);border:1px solid var(--rule);border-radius:10px;padding:0 8px;color:var(--ink2);white-space:nowrap}
+.cnt span.g{color:var(--d-miss);border-color:color-mix(in srgb,var(--d-miss) 45%,transparent)}
+.ft{border-top:1px solid var(--rule)}
+.fh{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:11px 18px;cursor:pointer}
+.fh:hover{background:var(--bg)}
+.fh .ar{color:var(--ink3);width:12px;flex:none}
+.fh .fid{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink3);flex:none}
+.fh .fn{flex:1;min-width:220px;font-weight:500}
+.fh .fr{font-size:12px;color:var(--ink3)}
+.fb{padding:4px 18px 16px 46px}
+@media(max-width:700px){.fb{padding:4px 12px 14px 14px}.mh,.fh{padding-left:12px;padding-right:12px}}
+.sect{font-size:11.5px;letter-spacing:.06em;color:var(--ink3);margin:12px 0 4px;font-weight:600}
+.sect.g{color:var(--d-miss)}
+.scr{font-size:12px;color:var(--ink2);margin:8px 0 2px;padding-left:2px}
+.cl{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px dashed var(--rule)}
+.cl:first-of-type{border-top:none}
+.cl .rid{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink3);width:42px;flex:none;padding-top:2px}
+.cl .ct{flex:1;min-width:0;font-size:13.5px;line-height:1.6}
+.cl .ct .w{color:var(--info)}
+.cl .ct .pr{color:var(--ink3);font-size:12.5px}
+.cl .ct .cv{color:var(--ink2);font-size:12.5px}
+.cl .ct .miss{color:var(--d-miss)}
+.cl .tags{flex:none;display:flex;gap:5px}
+.gl{font-size:13px;padding:4px 0;color:var(--ink2)}
+.gl b{color:var(--ink);font-weight:500}
+.gl .dbt{display:block;color:var(--ink3);font-size:12px;margin-left:2px}
+@media(max-width:700px){
+.ov tr:first-child{display:none}
+.ov tr{display:grid;grid-template-columns:1fr auto;gap:5px 8px;padding:9px 4px;border-top:1px solid var(--rule)}
+.ov td{border:none;padding:0}
+.ov td:nth-child(3),.ov td:nth-child(4){grid-column:1/-1}
+.bar{min-width:0}
+.dsec{padding:14px 12px}
+main{padding:14px 12px 48px}
+}
+/* 我来补充（缺口行内表单） */
+.gl .fillbtn{margin-left:8px;font-size:12px;padding:1px 8px;color:var(--info);border-color:var(--info)}
+.gl .filled{display:block;margin:4px 0 2px 2px;padding:6px 10px;border-left:3px solid var(--ok);background:var(--surf2);border-radius:4px;color:var(--ink);white-space:pre-wrap}
+.gl .filled.ask{border-left-color:var(--warn)}.gl .filled.later{border-left-color:var(--rule)}
+.gl .filled .fm{color:var(--ink3);font-size:11.5px}
+.gl .fform{margin:6px 0 4px 2px;display:flex;flex-direction:column;gap:6px}
+.gl .fform textarea{min-height:64px}
+.gl .fbtns{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.gl .fbtns .pri{border-color:var(--ok);color:var(--ok);font-weight:600}
+.cnt span.f{color:var(--ok)}
 </style></head><body>
 <div id="fresh"></div>
 <header><div class="nav" id="nav"></div><div class="fil" id="fil"></div></header>
@@ -481,7 +635,7 @@ const humanRef=s=>(s||'').replace(/([①-⑦])\s*[-:：]?\s*[A-Z]{1,2}(\d{1,3})(
 const md=s=>esc(s).replace(/&lt;br\s*\/?&gt;/gi,'<br>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
 const AS={passed:'通过',failed:'失败',error:'错误',skipped:'跳过',xfailed:'已知缺陷(预期失败)',xpassed:'意外通过',xpassed_strict:'⚠️意外通过(疑似已修复,待复核)'};
 const MS={pass:'通过',fail:'失败',blocked:'阻塞',skip:'跳过'};
-const VIEWNAME={gate0:'GATE 0 评审',cases:'用例执行'};
+const VIEWNAME={decomp:'解构清单',gate0:'GATE 0 评审',cases:'用例执行'};
 
 function route(){
   const h=location.hash.replace(/^#\/?/,'').split('/');
@@ -489,7 +643,7 @@ function route(){
   else{VIEW='index';TASK=null}
 }
 async function boot(){route();IDX=await (await fetch('/api/index')).json();await load()}
-window.onhashchange=async()=>{route();OPEN={};F='all';await load()};
+window.onhashchange=async()=>{route();FOPEN={};FDRAFT={};OPEN={};F='all';DF={t:null,k:null,c:null,q:'',show:'all'};DOPEN={};TOPEN={};TALL=false;await load()};
 
 async function load(){
   if(VIEW==='index'){DATA=null;return draw()}
@@ -525,6 +679,7 @@ function draw(){
   if(DATA&&DATA.error)return $('#app').innerHTML=`<div class="err"><b>加载失败</b><br>${esc(DATA.error)}</div>`;
   if(VIEW==='index')return drawIndex();
   if(VIEW==='gate0')return drawGate0();
+  if(VIEW==='decomp')return drawDecomp();
   return drawCases();
 }
 /* ── 索引 ──
@@ -917,6 +1072,302 @@ const HELP=`<h3>这些卡是什么？为什么要你来判断？</h3>
 <li><b>答错了能改吗？</b>能。每张卡选完就自动保存，随时回来改选项；点「清除本卡」可以撤回。</li>
 </ol>
 <div style="text-align:right;margin-top:14px"><button onclick="hideHelp()">知道了</button></div>`;
+/* ── 解构清单 · 按模块看 ──
+   评审人点进来先想知道：这个需求拆出了哪些模块、每个模块有哪些功能、每个功能的控件长什么样、缺了什么。
+   所以默认视角是一棵树：⓪ 模块 → ① 功能点 → ⑦ 控件 / ② 字段 / ④ 规则 / 缺口；统计图挪到「统计」。 */
+let DMODE='tree',TOPEN={},TALL=false;
+function dModeBtns(){
+  return [['tree','按模块看'],['table','按表看'],['stats','统计']].map(([m,l])=>
+    `<button class="${DMODE===m?'on':''}" onclick="DMODE='${m}';draw()">${l}</button>`).join('')+'<span class="sep">｜</span>';
+}
+function drawDecomp(){if(DMODE==='tree')return drawDecompTree();return drawDecompFlat(DMODE)}
+function ttog(k,def){TOPEN[k]=!(k in TOPEN?TOPEN[k]:def);draw()}
+function topen(k,def){return k in TOPEN?TOPEN[k]:(TALL||def)}
+function talls(v){TALL=v;TOPEN={};draw()}
+const ktag=k=>k&&k!=='确定'?`<span class="tg" style="background:${col(KV[k])}">${k}</span>`:'';
+function ctrlLine(c){
+  const when=c.when?` <span class="w">· ${md(c.when)}</span>`:'';
+  const pre=c.pre?` <span class="pr">（${md(c.pre)}）</span>`:'';
+  const miss=x=>/⚠/.test(x||'')?'miss':'';
+  const shows=[c.state?`<span class="${miss(c.state)}">${md(c.state)}</span>`:'',
+               c.text?`文案 <span class="${miss(c.text)}">${md(c.text)}</span>`:''].filter(Boolean).join('，');
+  return `<div class="cl"><span class="rid">${esc(c.id)}</span><div class="ct"><b>${md(c.obj)}</b>${when}${pre}`+
+    (shows?`<div class="cv">→ ${shows}</div>`:'')+`</div><div class="tags">${ktag(c.kind)}</div></div>`;
+}
+function fieldLine(c){
+  const bits=[['必填',c.need],['取值',c.rng],['默认',c.dflt],['校验',c.check]].filter(x=>x[1]&&x[1]!=='—').map(([k,v])=>`${k}：${md(v)}`);
+  return `<div class="cl"><span class="rid">${esc(c.id)}</span><div class="ct"><b>${md(c.obj)}</b>`+
+    (bits.length?`<div class="cv">${bits.join('　·　')}</div>`:'')+`</div><div class="tags">${ktag(c.kind)}</div></div>`;
+}
+function ruleLine(c){
+  return `<div class="cl"><span class="rid">${esc(c.id)}</span><div class="ct">${md(c.obj)}</div><div class="tags">${ktag(c.kind)}</div></div>`;
+}
+/* 我来补充：缺口就地补——人在「按模块看」里看到自己知道的，点一下就填，不用跳到别的页面。
+   按行存 gap_fills.json（key = 「④-BR50」这种行 key）；回填 decomp.md、把用例从"记录"改成"断言"由 agent 做（tools/gap_fill.py）。 */
+let FOPEN={},FDRAFT={};
+const FST={answered:['已补充',''],ask_product:['要问产品','ask'],later:['留到提测看页面','later']};
+const FSRC=['我确定','问过产品','问过开发','看过页面'];
+function fillsOf(){return (DATA&&DATA.fills)||{}}
+function fOpen(k){FOPEN[k]=!FOPEN[k];redrawKeep()}
+function fDraft(k,f,v){FDRAFT[k]={...(FDRAFT[k]||{}),[f]:v}}
+function redrawKeep(){const y=scrollY;drawDecompTree();scrollTo(0,y)}
+async function fSave(k,status,title){
+  const old=fillsOf()[k]||{},d=FDRAFT[k]||{};
+  const answer=(d.answer??old.answer??'').trim(),source=d.source??old.source??FSRC[0];
+  if(status==='answered'&&!answer){alert('先写下你知道的答案再保存。不确定的话点「要问产品」或「留到提测」。');return}
+  const r=await (await fetch(`/api/gapfill/${encodeURIComponent(TASK)}`,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gid:k,answer,source,status,title,rows:[k]})})).json();
+  if(r.error){alert(r.error);return}
+  DATA.fills={...fillsOf(),[k]:r.fill};delete FDRAFT[k];FOPEN[k]=false;redrawKeep();
+}
+async function fClear(k){
+  if(!confirm('撤回这条补充？'))return;
+  await fetch(`/api/gapfill/${encodeURIComponent(TASK)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({gid:k,clear:true})});
+  const f={...fillsOf()};delete f[k];DATA.fills=f;delete FDRAFT[k];FOPEN[k]=false;redrawKeep();
+}
+function gapLine(c,dbt){
+  const what=c.table==='⑦'?`${c.obj}${c.when?'（'+c.when+'）':''}`:c.obj;
+  const cols=(c.gap_cols||[]).length?`：<b>${c.gap_cols.map(esc).join('、')}</b> 没写清`:'';
+  const k=c.key,f=fillsOf()[k],st=f?FST[f.status]||FST.answered:null,ka=esc(k).replace(/'/g,"\\'");
+  let h=`<div class="gl"><span class="mono" style="color:var(--ink3);font-size:11.5px">${esc(c.id)}</span> ${md(what)}${cols}`+
+    (FOPEN[k]?'':`<button class="fillbtn" onclick="fOpen('${ka}')">${f?'修改':'我来补充'}</button>`)+
+    (c.dbt||[]).map(i=>dbt[i]?`<span class="dbt">${esc(i)}：${md(dbt[i].desc)}${dbt[i].open?'':'（已结）'}</span>`:'').join('');
+  if(f&&!FOPEN[k])h+=`<span class="filled ${st[1]}">${f.answer?esc(f.answer):'（没写内容）'}\n<span class="fm">${st[0]}${f.source?' · '+esc(f.source):''} · ${esc((f.at||'').replace('T',' '))}${f.applied_at?' · 已回填进解构清单':' · 待回填'}</span></span>`;
+  if(FOPEN[k]){
+    const d=FDRAFT[k]||{},ans=d.answer??(f?f.answer:'')??'',src=d.source??(f?f.source:'')??FSRC[0];
+    const title=esc(what).replace(/'/g,'').slice(0,200);
+    h+=`<div class="fform"><textarea class="ans" placeholder="写你知道的：取值、上限、谁能做、做了之后会怎样……" oninput="fDraft('${ka}','answer',this.value)">${esc(ans)}</textarea>`+
+      `<div class="fbtns"><select onchange="fDraft('${ka}','source',this.value)">`+FSRC.map(x=>`<option${x===src?' selected':''}>${x}</option>`).join('')+`</select>`+
+      `<button class="pri" onclick="fSave('${ka}','answered','${title}')">保存</button>`+
+      `<button onclick="fSave('${ka}','ask_product','${title}')">要问产品</button><button onclick="fSave('${ka}','later','${title}')">留到提测看页面</button>`+
+      (f?`<button onclick="fClear('${ka}')" style="color:var(--ink3)">撤回</button>`:'')+`<button onclick="fOpen('${ka}')" style="color:var(--ink3)">取消</button></div></div>`;
+  }
+  return h+'</div>';
+}
+function featHtml(f,dbt,q){
+  const all=[...f.controls,...f.fields,...f.rules];
+  const gaps=all.filter(x=>GAPK.includes(x.kind));
+  const k='f:'+f.id, open=topen(k,!!q);
+  let h=`<div class="ft"><div class="fh" onclick="ttog('${k}',${!!q})"><span class="ar">${open?'▾':'▸'}</span><span class="fid">${esc(f.id)}</span>`+
+    `<span class="fn">${md(f.name)}</span>`+(f.type?`<span class="fr">${esc(f.type)}</span>`:'')+(f.roles?`<span class="fr">${esc(f.roles)}</span>`:'')+
+    `<span class="cnt">`+(f.controls.length?`<span>控件 ${f.controls.length}</span>`:'')+(f.fields.length?`<span>字段 ${f.fields.length}</span>`:'')+
+    (f.rules.length?`<span>规则 ${f.rules.length}</span>`:'')+(gaps.length?`<span class="g">缺口 ${gaps.length}</span>`:'')+(gaps.filter(x=>fillsOf()[x.key]).length?`<span class="f">已补 ${gaps.filter(x=>fillsOf()[x.key]).length}</span>`:'')+`</span>${ktag(f.kind)}</div>`;
+  if(open){
+    h+='<div class="fb">';
+    if(f.entry)h+=`<div class="cv" style="font-size:12.5px;color:var(--ink3);margin-top:4px">入口：${md(f.entry)}</div>`;
+    if(f.controls.length){
+      h+=`<div class="sect">控件（${f.controls.length}）</div>`;
+      let last=null;
+      for(const c of f.controls){if(c.sub&&c.sub!==last&&new Set(f.controls.map(x=>x.sub)).size>1){h+=`<div class="scr">${md(c.sub)}</div>`;last=c.sub}h+=ctrlLine(c)}
+    }
+    if(f.fields.length)h+=`<div class="sect">字段（${f.fields.length}）</div>`+f.fields.map(fieldLine).join('');
+    if(f.rules.length)h+=`<div class="sect">规则（${f.rules.length}）</div>`+f.rules.map(ruleLine).join('');
+    if(gaps.length)h+=`<div class="sect g">缺了哪些描述（${gaps.length}）</div>`+gaps.map(c=>gapLine(c,dbt)).join('');
+    if(!all.length)h+='<div class="empty">这个功能点下还没挂控件、字段或规则。</div>';
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function drawDecompTree(){
+  const D=DATA,T=D.tree,S=D.summary;
+  const q=(DF.q||'').toLowerCase();
+  $('#kpi').innerHTML=`<button class="helpbtn" onclick="showDHelp()">ⓘ 怎么看这页？</button>`+
+    `<span>模块 <b>${T.module_count||'—'}</b></span><span>功能点 <b>${T.feature_count}</b></span><span>设计缺口 <b style="color:var(--d-miss)">${S.gaps}</b></span>`+
+    (Object.keys(fillsOf()).length?`<span>已补充 <b style="color:var(--ok)">${Object.keys(fillsOf()).length}</b></span>`:'');
+  $('#fil').innerHTML=dModeBtns()+`<button onclick="talls(true)">全部展开</button><button onclick="talls(false)">全部收起</button>`+
+    `<input class="srch" placeholder="搜功能 / 控件 / 文案" value="${esc(DF.q)}" oninput="DF.q=this.value.trim();drawDecompTree();const i=$('#fil input');i.focus();i.setSelectionRange(i.value.length,i.value.length)">`;
+  const dbt=Object.fromEntries((D.debts||[]).map(d=>[d.id,d]));
+  const match=f=>!q||JSON.stringify(f).toLowerCase().includes(q);
+  const tot=T.modules.reduce((a,m)=>({c:a.c+m.stats.controls,f:a.f+m.stats.fields,r:a.r+m.stats.rules}),{c:0,f:0,r:0});
+  const oc=T.orphan_screens.reduce((a,x)=>a+x.controls.length,0);
+  let h=`<div class="dsec intro"><h3>${T.structured?`这个需求拆成了 ${T.module_count} 个模块、${T.feature_count} 个功能点`:`这个需求拆出了 ${T.feature_count} 个功能点`}</h3>`+
+    `<p>功能点下面挂了 ${tot.c} 个控件、${tot.f} 个字段、${tot.r} 条规则${oc?`；另有 ${oc} 个控件还没挂到功能点（在最下面，按页面分组）`:''}。`+
+    `点模块看它有哪些功能，点功能看它的控件、字段、规则，以及<b>缺了哪些描述</b>（需求文档 / 设计图没写清的地方）。</p>`+
+    `<p>缺口里有你知道的，直接点旁边的「<b>我来补充</b>」写上就行。规则类（上限、范围、权限、并发结果、状态怎么变）最值得补；按钮文案、弹层长相这类提测后探页面会抓到，不用凭记忆写。`+
+    `补完跟我说一声「<b>缺口补完了</b>」，我回填进解构清单，并把相关用例从"记录"改成"断言"。</p>`+
+    (T.structured?'':`<div class="legacy">这份解构是旧格式：还没有「⓪ 模块清单」这一层，控件也没记录属于哪个功能点，所以功能点平铺、控件按页面分组。新需求会按模块拆；这份要补的话，让拆解 agent 跑一次「补模块层」即可。</div>`)+
+    '</div>';
+  // 旧格式（没有模块层）时控件全在「按页面分组」里——控件是用户最关心的，放最前面
+  const orphanHtml=()=>{let h='';
+  if(T.orphan_screens.length){
+    const k='m:__orphan', open=topen(k,!T.structured);
+    const scr=T.orphan_screens.map(sc=>({...sc,controls:sc.controls.filter(c=>!q||JSON.stringify(c).toLowerCase().includes(q))})).filter(sc=>sc.controls.length);
+    if(scr.length){
+      h+=`<div class="mod"><div class="mh" onclick="ttog('${k}',${!T.structured})"><b>控件（还没挂到功能点，按页面分组）</b><span class="cnt"><span>控件 ${oc}</span></span>`+
+        `<span class="ms">这些控件在解构表里没写属于哪个功能点，先按所在页面列出来。</span></div>`;
+      if(open)h+='<div class="fb" style="padding-left:18px">'+scr.map(sc=>`<div class="sect">${md(sc.name)}（${sc.controls.length}）</div>`+sc.controls.map(ctrlLine).join('')).join('')+'</div>';
+      h+='</div>';
+    }
+  }
+  return h};
+  if(!T.structured)h+=orphanHtml();
+  for(const m of T.modules){
+    const fs=m.features.filter(match);
+    if(q&&!fs.length)continue;
+    const k='m:'+(m.id||m.name), open=topen(k,true);
+    h+=`<div class="mod"><div class="mh" onclick="ttog('${esc(k)}',true)">`+(m.id?`<span class="mid">${esc(m.id)}</span>`:'')+`<b>${md(m.name)}</b>`+
+      `<span class="cnt"><span>功能 ${m.stats.features}</span><span>控件 ${m.stats.controls}</span>${m.stats.fields?`<span>字段 ${m.stats.fields}</span>`:''}${m.stats.rules?`<span>规则 ${m.stats.rules}</span>`:''}${m.stats.gaps?`<span class="g">缺口 ${m.stats.gaps}</span>`:''}</span>`+
+      (m.scope?`<span class="ms">${md(m.scope)}</span>`:'')+((m.entry||m.roles)?`<span class="me">${m.entry?'入口：'+md(m.entry):''}${m.roles?'　角色：'+esc(m.roles):''}</span>`:'')+'</div>';
+    if(open)h+=fs.map(f=>featHtml(f,dbt,q)).join('');
+    h+='</div>';
+  }
+  if(T.structured)h+=orphanHtml();
+  $('#app').innerHTML=h;
+}
+/* ── 解构清单 ──
+   decomp.md 七张表的每一行放到两条轴上：设计明确度（需求文档 / 设计图写清了没有）× 验证进度（有没有用例、最近一次跑的结果）。
+   数据层 tools/decomp_console.py；这里只画。 */
+let DF={t:null,k:null,c:null,q:'',show:'all'},DOPEN={},DSHOWCLOSED=false;
+const KV={'冲突':'--d-conflict','缺帧':'--d-conflict','缺失':'--d-miss','推断':'--d-infer','确定':'--d-conf','禁止':'--d-ban'};
+const CV={'有失败':'--v-fail','执行出错':'--v-err','已知缺陷':'--v-defect','未执行':'--v-notrun','未覆盖':'--v-uncov','已通过':'--v-pass'};
+const GAPK=['冲突','缺帧','缺失','推断'];
+const col=v=>`var(${v})`;
+function dPass(r){
+  if(DF.t&&r.table!==DF.t)return false;
+  if(DF.k&&r.kind!==DF.k)return false;
+  if(DF.c&&r.cov!==DF.c)return false;
+  if(DF.show==='gap'&&!GAPK.includes(r.kind))return false;
+  if(DF.show!=='all'&&DF.show!=='gap'&&r.cov!==DF.show)return false;
+  if(DF.q){const q=DF.q.toLowerCase();if(!(r.id+' '+Object.values(r.cols).join(' ')+' '+r.cases.map(c=>c.id).join(' ')).toLowerCase().includes(q))return false}
+  return true;
+}
+function dset(k,v){DF[k]=(DF[k]===v?null:v);draw()}
+function dshow(v){DF.show=v;draw()}
+function dclear(){DF={t:null,k:null,c:null,q:'',show:'all'};draw()}
+function dtog(k){DOPEN[k]=!DOPEN[k];draw()}
+function dq(v){DF.q=v.trim();const el=$('#drows');if(el)el.innerHTML=dRowsHtml();}
+function bar(counts,order,vars,total){
+  return '<div class="bar">'+order.filter(k=>counts[k]).map(k=>
+    `<i style="width:${(counts[k]/total*100).toFixed(2)}%;background:${col(vars[k])}" title="${k} ${counts[k]} 行"></i>`).join('')+'</div>';
+}
+function legend(order,vars,labels){
+  return '<div class="legend">'+order.map(k=>`<span><i style="background:${col(vars[k])}"></i>${labels?labels[k]||k:k}</span>`).join('')+'</div>';
+}
+function dRowHtml(r){
+  const ktag=`<span class="tg" style="background:${col(KV[r.kind])}" title="设计明确度">${r.kind}</span>`;
+  const ctag=r.cov==='未覆盖'||r.cov==='未执行'
+    ?`<span class="tg o" style="color:${col(CV[r.cov])}" title="验证进度">${r.cov}</span>`
+    :`<span class="tg" style="background:${col(CV[r.cov])}" title="验证进度">${r.cov}</span>`;
+  const chips=r.cases.length?`<div class="cs">`+r.cases.map(c=>
+    `<a href="#/t/${encodeURIComponent(TASK)}/cases" onclick="event.stopPropagation()" title="${esc(c.title)}　·　${c.state}${c.exec?'　·　'+c.exec:''}">`+
+    `${esc(c.id)} <b style="color:${col(CV[c.state])}">●</b></a>`).join('')+'</div>':'';
+  let h=`<div class="drow"><div class="h" onclick="dtog('${esc(r.key)}')"><span class="rid">${esc(r.id)}</span>`+
+    `<div class="mt">${md(r.main)}${chips}</div><div class="tags">${ktag}${ctag}</div></div>`;
+  if(DOPEN[r.key]){
+    const dbt=Object.fromEntries((DATA.debts||[]).map(d=>[d.id,d]));
+    h+='<dl class="dd">'+Object.entries(r.cols).filter(([k,v])=>k!=='ID'&&v).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${md(v.replace(/<br\s*\/?>/g,' / '))}</dd>`).join('')+
+      (r.dbt||[]).map(i=>`<dt>${esc(i)}</dt><dd>${md((dbt[i]||{}).desc||'')}${dbt[i]?`<br><span style="color:var(--ink3)">${esc(dbt[i].status)}</span>`:''}</dd>`).join('')+'</dl>';
+  }
+  return h+'</div>';
+}
+function dMatrixHtml(m){
+  const cls=v=>/🚫/.test(v)?'m-ban':/⚠/.test(v)?'m-miss':/🔶/.test(v)?'m-inf':/✅/.test(v)?'m-ok':'';
+  return `<div class="mx"><div class="vlab">${esc(m.title||'状态矩阵')}</div><table><tr>${m.header.map(x=>`<th>${md(x)}</th>`).join('')}</tr>`+
+    m.rows.map(r=>'<tr>'+r.map((c,i)=>i===0?`<th>${md(c)}</th>`:`<td class="${cls(c)}">${md(c)}</td>`).join('')+'</tr>').join('')+'</table></div>';
+}
+function dRowsHtml(){
+  const rows=DATA.rows.filter(dPass);
+  if(!rows.length)return '<div class="empty">这个筛选下没有行。</div>';
+  let h='';
+  for(const t of DATA.tables){
+    const rs=rows.filter(r=>r.table===t.key);
+    const mats=(DATA.matrices||[]).filter(m=>m.table===t.key);
+    if(!rs.length&&!(DF.t===t.key&&mats.length))continue;
+    h+=`<div class="dsec"><h3>${t.key} ${esc(t.name)}<span style="color:var(--ink3);font-weight:400;font-size:12.5px">　${rs.length} / ${t.total} 行</span></h3>`;
+    if(mats.length)h+=`<details${DF.t===t.key?' open':''}><summary>N×N 迁移矩阵 ${mats.length} 张（格子颜色＝明确度：绿 确定 / 紫 推断 / 橙 缺失 / 灰 禁止）</summary>${mats.map(dMatrixHtml).join('')}</details>`;
+    h+=rs.map(dRowHtml).join('')+'</div>';
+  }
+  return h;
+}
+function drawDecompFlat(part){
+  const D=DATA,S=D.summary,KO=D.kind_order,CO=D.cov_order;
+  $('#kpi').innerHTML=`<button class="helpbtn" onclick="showDHelp()">ⓘ 怎么看这页？</button>`+
+    `<span>共 <b>${S.rows}</b> 行</span><span>设计缺口 <b style="color:var(--d-miss)">${S.gaps}</b></span>`+
+    (D.cases.has_cases?`<span>未覆盖 <b style="color:var(--v-uncov)">${S.uncovered}</b></span><span>有失败 <b style="color:var(--v-fail)">${S.failed}</b></span>`:'')+
+    `<span>解构债 <b>${S.debts_open}</b>/${S.debts_total} 未结</span>`;
+  const cnt=v=>v==='all'?S.rows:v==='gap'?S.gaps:D.rows.filter(r=>r.cov===v).length;
+  const quick=[['all','全部'],['gap','设计缺口']].concat(D.cases.has_cases?CO.filter(c=>c!=='已通过').map(c=>[c,c]):[]);
+  let f=dModeBtns();
+  if(part==='table')f+=quick.map(([v,l])=>`<button class="${DF.show===v?'on':''}" onclick="dshow('${v}')">${l} ${cnt(v)}</button>`).join('');
+  const act=[DF.t&&`表 ${DF.t}`,DF.k&&`明确度＝${DF.k}`,DF.c&&`验证＝${DF.c}`].filter(Boolean);
+  if(act.length)f+=`<button onclick="dclear()" title="清除筛选">✕ ${act.join(' · ')}</button>`;
+  if(part==='table')f+=`<input class="srch" placeholder="搜 ID / 内容 / 用例号" value="${esc(DF.q)}" oninput="dq(this.value)">`;
+  $('#fil').innerHTML=f;
+
+  const M=D.meta;
+  let h=`<div class="dmeta">`+(M.prd_version?`<span>需求版本：<b>${esc(M.prd_version)}</b></span>`:'')+
+    (M.status?`<span>解构状态：<b>${M.status==='confirmed'?'已过 GATE 0':M.status==='pending_review'?'GATE 0 待审':esc(M.status)}</b></span>`:'')+
+    (M.gate0_applied_at?`<span>回填于 ${esc(M.gate0_applied_at.slice(0,10))}</span>`:'')+
+    (D.cases.has_cases?`<span>用例 <b>${D.cases.total}</b> 条</span>`:'<span style="color:var(--v-uncov)">还没生成用例（cases.md），验证进度一律"未覆盖"</span>')+
+    (D.cases.unlinked.length?`<span title="${esc(D.cases.unlinked.map(x=>x.id).join(', '))}">${D.cases.unlinked.length} 条用例没回指任何解构行</span>`:'')+'</div>';
+
+  if(part==='stats'){
+  // 总览：每张表两条条形
+  h+=`<div class="dsec"><h3>缺口地图</h3><p class="sub">每行一张解构表。<b>设计明确度</b>＝需求文档 / 设计图把这一行写清了没有；<b>验证进度</b>＝这一行有没有用例覆盖、用例最近一次跑的结果。点一行只看那张表。</p>`+
+    `<table class="ov"><tr><th>解构表</th><th class="num">行</th><th>设计明确度</th>${D.cases.has_cases?'<th>验证进度</th>':''}</tr>`+
+    D.tables.map(t=>`<tr class="click${DF.t===t.key?' sel':''}" onclick="dset('t','${t.key}')"><td>${t.key} ${esc(t.name)}</td><td class="num">${t.total}</td>`+
+      `<td>${t.total?bar(t.kind,KO,KV,t.total):'<span class="empty">只有矩阵</span>'}</td>`+
+      (D.cases.has_cases?`<td>${t.total?bar(t.cov,CO,CV,t.total):''}</td>`:'')+'</tr>').join('')+'</table>'+
+    legend(KO,KV)+(D.cases.has_cases?legend(CO,CV):'')+'</div>';
+
+  // 交叉表：明确度 × 验证
+  if(D.cases.has_cases){
+    const kinds=KO.filter(k=>D.rows.some(r=>r.kind===k));
+    const grid={};let mx=1;
+    D.rows.forEach(r=>{const k=r.kind+'|'+r.cov;grid[k]=(grid[k]||0)+1;mx=Math.max(mx,grid[k])});
+    h+=`<div class="dsec"><h3>明确度 × 验证进度</h3><p class="sub">每格＝同时满足这一行、这一列的解构行数，点格子筛出来。<b>上半部（冲突 / 缺失 / 推断）× 左半部（有失败 / 执行出错 / 未执行 / 未覆盖）</b>是"设计没写清、也没验证到"的地方，最该先看。</p>`+
+      `<div style="overflow:auto"><table class="xt"><tr><th></th>${CO.map(c=>`<th>${c}</th>`).join('')}</tr>`+
+      kinds.map(k=>`<tr><th class="rh">${k}</th>`+CO.map(c=>{const n=grid[k+'|'+c]||0;
+        if(!n)return '<td class="z">·</td>';
+        const a=Math.round(18+n/mx*62);
+        return `<td class="${DF.k===k&&DF.c===c?'hot':''}" style="background:color-mix(in srgb,${col(CV[c])} ${a}%,transparent)" onclick="DF.k='${k}';DF.c='${c}';DF.show='all';draw()" title="${k} × ${c}：${n} 行">${n}</td>`}).join('')+'</tr>').join('')+
+      '</table></div></div>';
+  }
+  }
+  if(part==='table')h+=`<div id="drows">${dRowsHtml()}</div>`;
+
+  // 解构债
+  const debts=D.debts||[];
+  if(part==='table'&&debts.length){
+    const op=debts.filter(d=>d.open),cl=debts.filter(d=>!d.open);
+    h+=`<div class="dsec"><h3>解构债 <span style="color:var(--ink3);font-weight:400;font-size:12.5px">${op.length} 未结 / ${debts.length}</span></h3>`+
+      `<p class="sub">拆解时识别出、但 需求文档和设计图都给不出答案的问题。未结的要么等你裁决，要么留到实测确认。</p>`+
+      op.map(d=>`<div class="debt"><span class="di">${esc(d.id)}</span><span>${md(d.desc)}<br><span style="color:var(--ink3);font-size:12px">${esc(d.table)}</span></span><span class="ds">${md(d.status)}</span></div>`).join('')+
+      (cl.length?`<div style="margin-top:8px"><button onclick="DSHOWCLOSED=!DSHOWCLOSED;draw()">${DSHOWCLOSED?'▾':'▸'} 已结 ${cl.length} 条</button></div>`:'')+
+      (DSHOWCLOSED?cl.map(d=>`<div class="debt closed"><span class="di">${esc(d.id)}</span><span>${md(d.desc)}</span><span class="ds">${md(d.status)}</span></div>`).join(''):'')+'</div>';
+  }
+  $('#app').innerHTML=h;
+}
+const DHELP=`<button class="x" onclick="hideDHelp()">✕</button><h3>解构清单怎么看</h3>
+<p class="lead">agent 写用例前，先把 需求文档和设计图拆成七张表（功能点、字段、状态机、业务规则、操作旅程、影响面、控件）。这一页把每一行摆出来，并放到两条轴上看。</p>
+<h4>按模块看（默认）</h4>
+<p class="lead">先看这个需求拆成了几个模块，每个模块下有哪些功能点；点开功能点看它的<b>控件</b>（什么情况下、显示什么、能不能点、文案是什么）、字段、规则，最后一段是<b>缺了哪些描述</b>。控件行的写法：<b>元素</b> · 什么时候（先要做什么）→ 状态，文案。</p>
+<p class="lead">「按表看」是原来的七张表逐行清单，「统计」是缺口地图和交叉表。</p>
+<h4>设计明确度：需求文档 / 设计图写清了没有</h4>
+<table><tr><td>确定</td><td>有出处：需求原文、设计图、你在 GATE 0 的裁决</td></tr>
+<tr><td>推断</td><td>agent 按常理补的，没人确认过</td></tr>
+<tr><td>缺失</td><td>需求文档和设计图都没写，属于设计缺口</td></tr>
+<tr><td>冲突 / 缺帧</td><td>两处说法对不上 / 状态机里该有的状态没定义</td></tr>
+<tr><td>禁止</td><td>明确不允许的操作（状态机里的禁止迁移）</td></tr></table>
+<h4>验证进度：测到了没有</h4>
+<table><tr><td>未覆盖</td><td>没有任何用例回指这一行</td></tr>
+<tr><td>未执行</td><td>有用例，但还没跑过</td></tr>
+<tr><td>有失败</td><td>最近一次跑，断言不通过（或人工判失败）</td></tr>
+<tr><td>执行出错</td><td>没跑到断言就挂了，多是环境、登录、造数问题，不等于产品有问题</td></tr>
+<tr><td>已知缺陷</td><td>用例挂着 xfail，缺陷已登记、等开发修</td></tr>
+<tr><td>已通过</td><td>覆盖它的用例最近一次都通过</td></tr></table>
+<h4>怎么用</h4><ol>
+<li>先看「缺口地图」：哪张表橙色 / 紫色多，就是那块设计没写清。</li>
+<li>再看「明确度 × 验证进度」交叉表：<b>缺失 × 未覆盖</b>是设计没写、也没人测的地方，最容易漏。</li>
+<li>点一行展开看全部列；用例号点了跳到用例执行页。</li></ol>
+<p class="lead" style="margin-top:12px">一行被多条用例覆盖时，验证进度取最差的那条。数据每次刷新重新读 decomp.md / cases.md / 执行台账，只读不写。</p>`;
+function showDHelp(){let m=$('#dhelpmask');
+  if(!m){m=document.createElement('div');m.id='dhelpmask';m.className='mask';
+    m.innerHTML='<div class="dlg" role="dialog" aria-modal="true">'+DHELP+'</div>';
+    m.addEventListener('click',e=>{if(e.target===m)hideDHelp()});document.body.appendChild(m)}
+  m.classList.add('on')}
+function hideDHelp(){const m=$('#dhelpmask');if(m)m.classList.remove('on')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideDHelp()});
 function showHelp(){let m=$('#helpmask');
   if(!m){m=document.createElement('div');m.id='helpmask';m.className='mask';
     m.innerHTML='<div class="dlg" role="dialog" aria-modal="true">'+HELP+'</div>';

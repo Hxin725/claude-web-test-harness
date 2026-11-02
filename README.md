@@ -326,7 +326,7 @@ terminal. It's pure standard library — nothing to install. **Normally you don'
 is needed, the agent starts it with the command below and sends you the link. To open it manually:
 
 ```bash
-python3 tools/qa_console.py ensure 8900   # one port, pick the version → the feature → the view
+python3 tools/qa_console.py ensure 8900   # one port, pick the version → the feature → the view (breakdown / review / runs)
 # ensure = make sure what's on 8900 runs the CURRENT code: reuse it if fresh, replace it if stale or pre-versioning.
 # Always start the console this way after updating harness code — it is a long-running process and never notices file changes;
 # a banner at the top of the page tells you when the code on disk is newer than what's running
@@ -334,6 +334,14 @@ python3 tools/qa_console.py ensure 8900   # one port, pick the version → the f
 
 What it gives you:
 
+- **The breakdown view: what the feature was split into, and what's missing.** By default it's a tree — the modules
+  the feature touches, the functions under each module, and for each function its controls (when it shows, what state,
+  what exact text), fields, rules, and finally **what the spec doesn't say**. "By table" lists the checklist row by row;
+  "Stats" places every row on two axes — how clearly the spec defines it × how far it has been verified.
+- **Fill in the gaps you already know.** Every gap has an "I know this" button: write the answer and where it came from
+  (I'm sure / asked product / asked dev / saw the page), or mark it "ask product" / "check once it's built". Then say
+  "gaps filled" in the chat; the agent folds the answers back into the checklist and turns the related cases from
+  "run and record" into real assertions. Answers live in `gap_fills.json`; the checklist is never rewritten mechanically.
 - **Every card makes sense on its own.** A plain-language question, background, the source text (conflicting sources
   side by side, mockup thumbnails), and concrete options with the agent's default marked. No internal codes like `R02`
   or `DBT-003` — the checklist follows a template, and `python3 tools/gate_review.py check <task_id>` verifies the format

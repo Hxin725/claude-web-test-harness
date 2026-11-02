@@ -33,7 +33,7 @@ LOCK = threading.Lock()
 
 # 置信度标记
 MARK_OK, MARK_INFER, MARK_MISS = "✅", "🔶", "⚠️"
-TABLE_RE = re.compile(r"^##\s+(①|②|③|④|⑤|⑥|⑦)\s*(.*)$")
+TABLE_RE = re.compile(r"^##\s+(⓪|①|②|③|④|⑤|⑥|⑦)\s*(.*)$")
 SECTION_RE = re.compile(r"^##\s+(.+)$")
 
 
@@ -374,11 +374,11 @@ def save_verdicts(task_id: str, data: dict) -> None:
 # 评审控制台会把表格行原样贴给评审人看，评审人看不懂 R02 / A01–A04 / S1 / DBT-003 这类编号。
 # 规则见 artifacts/agents/decomposition.md「会被人读到的文字」：编号只许出现在 ID 列和回指列。
 REF_COLS = set(_CFG.get("reference_cols") or
-               ["ID", "债ID", "所属表", "所属功能点", "规则回指", "涉及字段", "page_ref", "置信度", "状态"])
+               ["ID", "债ID", "所属表", "所属模块", "所属功能点", "规则回指", "涉及字段", "page_ref", "置信度", "状态"])
 # 解构债清单里的「描述」是 agent 自己对账用的速记，允许代号；「问题/背景/选项」是给人看的，不允许
 REF_COLS_DEBT = {"描述"}
 _CODE_RE = re.compile(r"(?<![A-Za-z0-9])(DBT-\d+|[A-Z]{1,2}\d{1,3}(?:\s*[–\-~]\s*[A-Z]{1,2}\d{1,3})?)(?![0-9])")
-_TABLE_REF_RE = re.compile(r"表\s*[①②③④⑤⑥⑦]|[①②③④⑤⑥⑦]\s*[-:：]\s*[A-Z]")
+_TABLE_REF_RE = re.compile(r"表\s*[⓪①②③④⑤⑥⑦]|[⓪①②③④⑤⑥⑦]\s*[-:：]\s*[A-Z]")
 
 
 def code_refs(doc: dict) -> list[dict]:
@@ -428,9 +428,15 @@ def code_refs(doc: dict) -> list[dict]:
 # 约定，就把它加 1，并同步改模板 frontmatter 的 contract 字段。
 #   v1  卡片标题取「描述」列（agent 速记）
 #   v2  解构债清单带「问题 / 背景 / 选项」三列，人读列不许用代号
-CONTRACT_VERSION = 2
+#   v3  加 ⓪ 模块清单；① 带「所属模块」、④⑦ 带「所属功能点」（控制台「按模块看」靠这两列把行挂到树上）
+# v2 清单仍然可审：控制台对没有模块层的旧格式兜底（功能点平铺、控件按页面分组），所以 v2 只提示不报错，
+# 也不核对它没有的层级列。低于 MIN_CONTRACT 的才要求重写。
+CONTRACT_VERSION = 3
+MIN_CONTRACT = 2
 TEMPLATE = ROOT / "artifacts" / "templates" / "decomp.template.md"
-CORE_KEYS = ["①", "②", "③", "④", "⑤", "⑥", "⑦"]
+CORE_KEYS = ["⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦"]
+V3_ONLY_KEYS = {"⓪"}
+V3_ONLY_COLS = {"所属模块", "所属功能点"}
 DEBT_KEY = "解构债清单"
 DEBT_NEED_COLS = ["问题", "背景", "选项"]
 _JUDGE_RE = re.compile(r"需判断|冲突")
@@ -465,21 +471,27 @@ def check_contract(doc: dict) -> list[dict]:
     if not cv:
         add("warn", f"frontmatter 缺少 contract: {CONTRACT_VERSION}（按模板创建的清单会自带；缺失说明"
                     f"可能没按模板写，或 agent 用的还是旧版定义）")
-    elif cv.isdigit() and int(cv) < CONTRACT_VERSION:
+    elif cv.isdigit() and int(cv) < MIN_CONTRACT:
         add("error", f"这份清单是按 v{cv} 契约生成的，当前契约是 v{CONTRACT_VERSION}，需要按模板重写")
+    elif cv.isdigit() and int(cv) < CONTRACT_VERSION:
+        add("warn", f"这份清单是按 v{cv} 契约写的，没有「⓪ 模块清单」这一层——仍可评审，解构清单按旧格式展示"
+                    f"（功能点平铺、控件按页面分组）；要按模块看，让 test-case-design 补一次模块层")
+    legacy = not cv.isdigit() or int(cv) < 3
 
     tpl = _template_headers()
     secs = [s for s in doc["sections"] if s["header"]]
     for key in CORE_KEYS:
         tables = [s for s in secs if s["key"] == key]
         if not tables:
-            add("error", f"缺少核心表 {key}")
+            if not (legacy and key in V3_ONLY_KEYS):
+                add("error", f"缺少核心表 {key}")
             continue
         want = (tpl.get(key) or [None])[0]
         if not want:
             continue
         best = max(tables, key=lambda s: len(set(want) & {h.strip() for h in s["header"]}))
-        missing = [c for c in want if c not in {h.strip() for h in best["header"]}]
+        missing = [c for c in want if c not in {h.strip() for h in best["header"]}
+                   and not (legacy and c in V3_ONLY_COLS)]
         if missing:
             add("error", f"表{key}的列和模板不一致：缺少「{'」「'.join(missing)}」（不许增删列、不许改列名）")
 

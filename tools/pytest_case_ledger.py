@@ -16,14 +16,17 @@ xpassed（非 strict 意外通过）/ xpassed_strict（strict 意外通过，pyt
 import json
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from case_ids import CASE_RE, case_ids_from_doc   # noqa: E402,F401  —— 提取规则见 tools/case_ids.py（控制台也用，不能依赖 pytest）
+
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "artifacts" / "_runs" / "auto_runs.jsonl"
-CASE_RE = re.compile(r"\bTC-[A-Z]{2,6}-[A-Z]?\d{2,4}\b")
 
 
 def pytest_configure(config):
@@ -39,7 +42,7 @@ def _case_ids(item) -> list[str]:
     if ids:
         return ids
     doc = (getattr(item, "function", None).__doc__ or "") if hasattr(item, "function") else ""
-    return CASE_RE.findall(doc)
+    return case_ids_from_doc(doc)
 
 
 @pytest.hookimpl(hookwrapper=True)
