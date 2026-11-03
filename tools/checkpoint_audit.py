@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """检查点清单 · 合并 + 完整性查账（纯标准库）
 
-⚠️ 实验性工具，不在主流程里：GATE 0 的正式审核介质是 decomp.md + 评审控制台
+⚠️ 实验性工具，不在主流程里：需求拆解评审的正式审核介质是 decomp.md + 评审控制台
 （`tools/qa_console.py`，见 artifacts/agents/orchestrator.md「Gate 处理」）。本工具对应的
 "粗粒度检查点清单 checkpoints.md"还没有进任何 agent 契约，新人可以忽略它。
 
@@ -173,7 +173,7 @@ def main():
         print(f"\n⚠️ 完全没有溯源的检查点 {len(noref)} 条: {' '.join(noref[:20])}")
 
     if "--merge" in sys.argv:
-        out = [f"# {td.name} · 检查点清单（GATE 0 审核介质）\n",
+        out = [f"# {td.name} · 检查点清单（需求拆解评审的审核介质）\n",
                f"> 共 **{len(cps)}** 条检查点，🔒 阻塞 {sum(c['blocked'] for c in cps)} 条。\n",
                "> 粒度：一条 = 一个模块 × 一个校验类型。`←` 回指 PRD (5) 章节号（评审页可展开原文）。\n",
                "> `🔒` = 该测但缺前提，照写不删，内联带 DBT-ID。\n"]

@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""decomp.md 结构化解构层 · GATE 0 评审服务器（纯标准库，无需安装依赖）
+"""decomp.md 结构化解构层 · 需求拆解评审服务器（纯标准库，无需安装依赖）
 
 ⚠️ 【上一代实现 · 已被 tools/gate_review.py + tools/gate_review_ui.py 取代，保留作历史参考】
 
-    同一个位置、同一份输入（decomp.md）、同一道闸（GATE 0），但本文件的能力止于
+    同一个位置、同一份输入（decomp.md）、同一道闸（需求拆解评审），但本文件的能力止于
     「逐行批注 + 导出 Markdown」：
       · 行 ID 只认 6 种固定前缀（A/F/S/R/J/I），认不出表⑦ 之后扩展的行；
       · 没有分诊——所有 🔶/⚠️ 行一视同仁全部呈给用户（新实现里这正是
         「33 张卡注意力会崩溃」那条教训要解决的问题）；
-      · 没有人审前快照，因而拿不到「人在 GATE 0 改了多少格」这个评测信号；
+      · 没有人审前快照，因而拿不到「人在需求拆解评审改了多少格」这个评测信号；
       · 批注只到「表态 + 说明」，不产生机器可读的裁决单供下游 agent 回填。
 
     新流程请用：
@@ -32,7 +32,7 @@
 设计要点：
   · decomp.md 每次请求都重新解析 —— agent 在增补轮改了文件，刷新页面就能看到，
     批注按「行 ID」存，行内容变了批注也不丢。
-  · 默认只列 🔶推断 / ⚠️缺失 / ⚠️冲突 的行（GATE 0 真正要审的），✅确定 的行默认折叠。
+  · 默认只列 🔶推断 / ⚠️缺失 / ⚠️冲突 的行（需求拆解评审真正要审的），✅确定 的行默认折叠。
 """
 import json
 import re
@@ -119,7 +119,7 @@ def parse(md_path: Path):
         blob = " ".join(cells)
         conf = "⚠️" if "⚠️" in cells[-1] else ("🔶" if "🔶" in cells[-1] else "✅")
         # kind 比 conf 细一档：冲突/缺帧 是「两边都有主张但对不上 / 该有的没有」，
-        # 比单纯的"没写"贵得多，GATE 0 该优先裁决 → 单独给个筛选档位
+        # 比单纯的"没写"贵得多，需求拆解评审该优先裁决 → 单独给个筛选档位
         tail = cells[-1]
         kind = ("冲突" if "冲突" in tail else "缺帧" if "缺帧" in tail
                 else "缺失" if conf == "⚠️" else "推断" if conf == "🔶" else "确定")
@@ -173,7 +173,7 @@ def save(store: Path, data: dict) -> None:
 def export_md(rows, debts, notes) -> str:
     done = {k: v for k, v in notes.items() if v.get("stance") or v.get("text")}
     by_id = {r["id"]: r for r in rows}
-    out = ["# GATE 0 评审批注汇总", "",
+    out = ["# 需求拆解评审 · 批注汇总", "",
            f"导出时间：{time.strftime('%Y-%m-%d %H:%M')} · 共 {len(done)} 条批注", ""]
     for stance in ["answer", "agree", "test", "skip"]:
         ids = [i for i, n in done.items() if n.get("stance") == stance]
@@ -196,7 +196,7 @@ def export_md(rows, debts, notes) -> str:
     return "\n".join(out)
 
 
-HTML = r"""<!doctype html><meta charset="utf-8"><title>GATE 0 · 解构评审</title>
+HTML = r"""<!doctype html><meta charset="utf-8"><title>需求拆解评审</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font:14px/1.6 -apple-system,"PingFang SC",sans-serif;background:#12141a;color:#dfe3ea}
 header{position:sticky;top:0;z-index:9;background:#181b23;border-bottom:1px solid #2a2f3a;padding:10px 16px}
@@ -241,7 +241,7 @@ textarea{width:100%;margin-top:6px;min-height:34px;background:#12141a;color:#dfe
 .saved{color:#7ee2b8;font-size:12px;margin-left:6px;opacity:0;transition:.3s}.saved.s{opacity:1}
 </style>
 <header>
-  <h1>GATE 0 · 结构化解构评审 <span id="task" style="color:#7c8598;font-weight:400"></span></h1>
+  <h1>需求拆解评审 · 结构化解构 <span id="task" style="color:#7c8598;font-weight:400"></span></h1>
   <div class="bar">
     <span>表：</span><span id="tabs"></span>
     <select id="fconf"><option value="conflict">⚠️冲突 + 缺帧（最该先裁决）</option>

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GATE 0 评审台的 UI 与服务器部分（解析逻辑在 gate_review.py）。
+"""需求拆解评审台的 UI 与服务器部分（解析逻辑在 gate_review.py）。
 
 职责边界（重要）：
   · 本工具**不改 decomp.md 的表格内容** —— 那是 test-case-design 的产物，谁的产物谁改。
@@ -153,7 +153,7 @@ def prd_rule_block(task_id: str) -> dict | None:
 #
 # 为什么需要：上面的 prd_index 只认一种特定形状的需求文档（「1. 位置」+「旧 → 新」变更行），
 # 换一份普通 PRD 就一块也匹配不上，卡片证据区只剩「置信度」那一格 —— 评审人看不到原文，
-# 只能凭 agent 的转述做裁决（实锤：GATE 0 冲突卡上只显示了 "⚠️冲突 DBT-0xx" 这一格）。
+# 只能凭 agent 的转述做裁决（实锤：需求拆解评审冲突卡上只显示了 "⚠️冲突 DBT-0xx" 这一格）。
 # 这里改成按「来源引用」直接定位：
 #   PRD §2.2 / §2.2        → 需求文档里编号为 2.2 的那一节正文
 #   变更日志 2026-09-28    → 需求文档里日期为该天的那一行（认 2026-09-28 / 2026年9月28日 两种写法）
@@ -636,7 +636,7 @@ def cmd_apply(task_id: str) -> None:
         print(f"✓ 已存人审前快照 {p['snapshot'].name}（评测信号，勿删）")
 
     by_cid = {c["cid"]: c for c in cards}
-    lines = ["# GATE 0 裁决单", "",
+    lines = ["# 需求拆解评审裁决单", "",
              f"> 由 `tools/gate_review_ui.py` 生成。机器可读版：`{p['verdicts'].name}`",
              f"> 待决 {len(cards)} 项，已答 {len(data)} 项。",
              "> **回填 decomp.md 由 test-case-design 增补轮执行**（谁的产物谁改）。", "",
@@ -735,7 +735,7 @@ class Handler(BaseHTTPRequestHandler):
 
 PAGE = r"""<!doctype html><html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GATE 0 评审台</title><style>
+<title>需求拆解评审台</title><style>
 :root{--bg:#f5f7f8;--surf:#fff;--surf2:#eaeff2;--ink:#131c24;--ink2:#48565f;--ink3:#6e7d87;
 --rule:#d3dbe0;--gate:#9c6a05;--ok:#146f67;--danger:#9e3428;--infer:#7a5901}
 @media(prefers-color-scheme:dark){:root{--bg:#0e141a;--surf:#161e25;--surf2:#1c262e;--ink:#e6edf2;
@@ -801,7 +801,7 @@ h2{font-size:15px;margin:22px 0 4px}
 .done code{background:var(--surf2);padding:2px 6px;border-radius:3px}
 </style></head><body>
 <header>
-  <h1>GATE 0 评审台</h1>
+  <h1>需求拆解评审台</h1>
   <div class="tabs">
     <button id="tq" class="on" onclick="setView('queue')">决策队列</button>
     <button id="tt" onclick="setView('tables')">全表浏览</button>
@@ -961,7 +961,7 @@ if __name__ == "__main__":
         port = int(sys.argv[3]) if len(sys.argv) > 3 else 8901
         Handler.task_id = task
         n = len(build_cards(task)["cards"])
-        print(f"GATE 0 评审台：http://127.0.0.1:{port}/\n待决 {n} 项 · 裁决落盘 "
+        print(f"需求拆解评审台：http://127.0.0.1:{port}/\n待决 {n} 项 · 裁决落盘 "
               f"{paths(task)['verdicts']}\nCtrl-C 结束")
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
     else:

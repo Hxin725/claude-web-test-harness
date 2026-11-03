@@ -22,8 +22,8 @@
    的唯一动作，跳过它整套方法论就不积累
 4. 产出 impl.md
 
-> 为什么这样拆：行为模型/文案类错误在 GATE 1 就该被 flow.md（对照 UI 设计图）审掉；编码阶段
-> 只剩"实现忠不忠于 flow.md"和"实测冒出的新偏差"，所以 GATE 2 降级为条件触发的偏差裁决。
+> 为什么这样拆：行为模型/文案类错误在用例评审就该被 flow.md（对照 UI 设计图）审掉；编码阶段
+> 只剩"实现忠不忠于 flow.md"和"实测冒出的新偏差"，所以偏差裁决降级为条件触发的偏差裁决。
 > **发现归人，固化归 agent，审核前置到提测前。**
 
 ## 触发
@@ -39,7 +39,7 @@
 task_id: <id>
 agent: test-writing
 status: pending_review               # deviation_count=0 时 orchestrator 直接视为通过
-deviation_count: 3                   # 关键字段：0 = 自动流转，>0 = GATE 2 等用户裁决
+deviation_count: 3                   # 关键字段：0 = 自动流转，>0 = 偏差裁决等用户裁决
 source_files:
   - "tests/test_search.py"
 created_at: ...
@@ -70,7 +70,7 @@ cases.md 每行带一个 `exec` 列，取值 `auto | manual | blocked`：
 | `manual` | 只能人工执行（依赖真实邮件 / 支付回调 / 外部系统 / 人眼判断的视觉效果） | **不写脚本**，跳过 |
 | `blocked` | 当前环境跑不了（依赖尚未就绪的前置能力或数据） | **不写脚本**，跳过 |
 
-生产端（test-case-design）一律先填 `auto`，`manual` / `blocked` **全部是用户在 GATE 1 亲手标的例外**
+生产端（test-case-design）一律先填 `auto`，`manual` / `blocked` **全部是用户在用例评审亲手标的例外**
 ——所以它是用户的裁决，不是 agent 的建议，你无权改写、也无权"顺手试一下"。
 
 两条硬约束的唯一出处在系统提示（`.claude/agents/test-writing.md` 的红线）：

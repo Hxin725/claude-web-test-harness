@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""GATE 0/1 交互式评审台 —— 把 decomp.md / cases.md 变成可点选的决策队列。
+"""需求拆解评审 / 用例评审的交互式评审台 —— 把 decomp.md / cases.md 变成可点选的决策队列。
 
 设计前提：**decomp.md 仍是唯一事实来源**。本工具只做三件事：
   1. 解析 decomp.md → 抽出「需要人决策的行」（含 ⚠️ / 🔶 的行）
   2. 起本地服务器让人逐条点选，决策落 verdicts.json（机器可读）
   3. apply 把决策回填进 decomp.md，回填前存 decomp.pre_gate0.md 快照
 
-快照的副作用是白捡的评测信号：`stats` 能算出「人在 GATE 0 改了多少格」——
+快照的副作用是白捡的评测信号：`stats` 能算出「人在需求拆解评审改了多少格」——
 这是 agent 准不准的直接读数，以前就地编辑会把它销毁。
 
 纯标准库，无需 pip 安装。
@@ -18,7 +18,7 @@
     python3 tools/gate_review.py parse <task>            # 只打印解析结果，自检用
     python3 tools/gate_review_ui.py serve <task> [端口]  # 起评审台（默认 8901）
     python3 tools/gate_review_ui.py apply <task>         # 决策落裁决单
-    python3 tools/gate_review_ui.py stats <task>         # GATE 0 改动量统计
+    python3 tools/gate_review_ui.py stats <task>         # 需求拆解评审改动量统计
 """
 import json
 import os
@@ -283,7 +283,7 @@ def needs_user_judgment(kind: str, text: str) -> bool:
     # 实锤修复：agent 经常在标签括号里塞解释性文字，比如
     # "［需判断——这是计价政策问题…］"——严格要求 "［需判断］" 四字紧跟着闭括号
     # 会在这种写法下完全匹配不到，导致真正需要用户判断的债被静默丢进 deferred，
-    # 用户在 GATE 0 根本看不到。改成宽松子串匹配——"需判断"/"可提测"这两个词本身
+    # 用户在需求拆解评审根本看不到。改成宽松子串匹配——"需判断"/"可提测"这两个词本身
     # 已经足够独特，不必强求括号格式。
     if "需判断" in text:
         return True                        # agent 显式声明——优先采信

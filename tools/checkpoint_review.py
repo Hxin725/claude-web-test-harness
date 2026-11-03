@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""检查点清单 · GATE 0 评审服务器（纯标准库）
+"""检查点清单 · 需求拆解评审服务器（纯标准库）
 
-⚠️ 实验性工具，不在主流程里：GATE 0 的正式审核介质是 decomp.md + 评审控制台
+⚠️ 实验性工具，不在主流程里：需求拆解评审的正式审核介质是 decomp.md + 评审控制台
 （`tools/qa_console.py`，见 artifacts/agents/orchestrator.md「Gate 处理」）。本工具对应的
 "粗粒度检查点清单 checkpoints.md"还没有进任何 agent 契约，新人可以忽略它。
 
@@ -10,7 +10,7 @@
 
 与 decomp_review.py 的分工：
   · decomp_review  审「解构底稿」—— 我的疑惑清单，内部工作用
-  · checkpoint_review 审「完整检查点清单」—— **GATE 0 的正式人审介质**
+  · checkpoint_review 审「完整检查点清单」—— **需求拆解评审的正式人审介质**
 
 两层判断，缺一不可（用户 2026-07-28 提的核心诉求）：
   · **检查点级**：这条写得对不对（认可 / 要改 / 删掉）
@@ -114,7 +114,7 @@ def save(p: Path, d):
 def export_md(cps, notes):
     cp_n = notes.get("cp", {})
     md_n = notes.get("mod", {})
-    o = ["# GATE 0 · 检查点评审结论", "",
+    o = ["# 需求拆解评审 · 检查点清单结论", "",
          f"导出 {time.strftime('%Y-%m-%d %H:%M')} · 检查点批注 {len(cp_n)} 条 · "
          f"模块覆盖度判定 {len(md_n)} 个", ""]
     o += ["## 一、模块级：覆盖够不够", "", "| 模块 | 判定 | 用户说 |", "|---|---|---|"]
@@ -141,7 +141,7 @@ def export_md(cps, notes):
     return "\n".join(o)
 
 
-HTML = r"""<!doctype html><meta charset="utf-8"><title>GATE 0 · 检查点评审</title>
+HTML = r"""<!doctype html><meta charset="utf-8"><title>需求拆解评审 · 检查点清单</title>
 <style>
 *{box-sizing:border-box}body{margin:0;font:14px/1.65 -apple-system,"PingFang SC",sans-serif;background:#12141a;color:#dfe3ea}
 header{position:sticky;top:0;z-index:20;background:#181b23;border-bottom:1px solid #2a2f3a;padding:9px 16px}
@@ -181,7 +181,7 @@ details.src{margin-top:6px}details.src summary{cursor:pointer;font-size:12px;col
 textarea{width:100%;margin-top:5px;min-height:30px;background:#12141a;color:#dfe3ea;border:1px solid #333a49;border-radius:6px;padding:5px 8px;font:inherit;resize:vertical}
 .saved{color:#7ee2b8;font-size:11px;opacity:0;transition:.3s}.saved.s{opacity:1}
 </style>
-<header><h1>GATE 0 · 检查点评审 <span id="task" style="color:#7c8598;font-weight:400"></span></h1>
+<header><h1>需求拆解评审 · 检查点清单 <span id="task" style="color:#7c8598;font-weight:400"></span></h1>
 <div class="bar">
   <select id="fmod"></select>
   <select id="fp"><option value="">全部优先级</option><option>P0</option><option>P1</option><option>P2</option></select>

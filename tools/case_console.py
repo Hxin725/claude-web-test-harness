@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """用例执行台 —— 把 cases.md 变成可执行、可记录的 HTML 控制台。
 
-设计前提（与 GATE 0 评审台同一套）：
+设计前提（与需求拆解评审台同一套）：
   · **cases.md 仍是唯一事实来源**（agent 产物、可 diff、可 git、可追溯）。
     本工具只读它，**从不改它** —— 定稿的用例不该被执行结果污染。
-    （用户在 GATE 1 主动改用例走 tools/cases_edit.py，那是另一条有快照有审计的路径。）
+    （用户在用例评审主动改用例走 tools/cases_edit.py，那是另一条有快照有审计的路径。）
   · 执行记录落**只增不改**的台账：
       artifacts/_runs/auto_runs.jsonl    ← pytest 插件写（tools/pytest_case_ledger.py）
       artifacts/_runs/manual_runs.jsonl  ← 本控制台写（人工执行）

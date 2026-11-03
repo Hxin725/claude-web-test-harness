@@ -20,13 +20,13 @@ A multi-agent UI testing framework driven by [Claude Code](https://claude.com/cl
  ② the agent starts the test ledger on your machine and sends you the link  ──►  http://localhost:8900
    │
    ▼
- ③ you review in the browser: only the cards that need YOUR decision; one click saves      ← GATE 0
+ ③ you review in the browser: only the cards that need YOUR decision; one click saves      ← breakdown review
    │  say "done reviewing" in the chat
    ▼
  ④ the agent writes your answers (and notes) back into the checklist, then generates
    │  formal test cases + step-by-step actions
    ▼
- ⑤ same ledger: read the cases, edit them in place, export to Excel for manual testers     ← GATE 1
+ ⑤ same ledger: read the cases, edit them in place, export to Excel for manual testers     ← case review
    │  continue if you want automation ↓
    ▼
  ⑥ check against the real pages → write code & self-run → review; results flow back into the ledger by case ID
@@ -288,7 +288,7 @@ The harness picks its approach from what you have (tiers A / B / C — see [`art
 A few conventions:
 
 - `input/` and `ui_design/` are gitignored: **requirement docs and mockups stay local and never enter the repo**.
-- With only a website, what gets recorded is how the product behaves **now**, not how it **should** behave. GATE 0 explicitly asks you which observed behaviors are actually bugs.
+- With only a website, what gets recorded is how the product behaves **now**, not how it **should** behave. The breakdown review explicitly asks you which observed behaviors are actually bugs.
 - Anything beyond read-only exploration (real submits, deletes) is not triggered during exploration; it is marked "not observed" for you to decide.
 - Confirmed business conclusions are written back to `specs/` (the product knowledge base), so the next task on the same module reuses them.
 
@@ -312,16 +312,16 @@ check the real pages and write the test code, self-running and self-repairing it
 click or correct at two checkpoints.** (See "What a complete run looks like" at the top.)
 
 > 💡 `artifacts/2026-06-23_testerhome_home_search/` in this repo holds one early trial run, but
-> it predates the current two-phase methodology (no decomp.md/GATE 0) and part of what it
+> it predates the current two-phase methodology (no decomp.md / breakdown review) and part of what it
 > describes never actually landed in the codebase — see the disclaimer at the top of each file
 > in that folder. A real, up-to-date example run is on the to-do list (best produced against a
-> project with real login/state, where the full GATE 0/1/2 pipeline actually gets exercised).
+> project with real login/state, where all three reviews (breakdown / cases / deviations) actually get exercised).
 
 ---
 
 ## The test ledger (review console) — where you review
 
-Both checkpoints (GATE 0 checklist, GATE 1 test cases) happen on this local web page instead of raw markdown in a
+Both checkpoints (breakdown review of the checklist, case review of the test cases) happen on this local web page instead of raw markdown in a
 terminal. It's pure standard library — nothing to install. **Normally you don't start it yourself**: when your review
 is needed, the agent starts it with the command below and sends you the link. To open it manually:
 
@@ -467,7 +467,7 @@ hooks/                        The pre-commit hook itself (installed by scripts/i
 page_map/                     Page maps (YAML describing the currently deployed page elements/selectors)
 data/                         Test data
 tests/                        Test code
-artifacts/GLOSSARY.md         Glossary of internal terms (GATE, tiers, confidence markers, exec…), Chinese
+artifacts/GLOSSARY.md         Glossary of internal terms (the three reviews / GATE codes, tiers, confidence markers, exec…), Chinese
 specs/                        Product knowledge base (confirmed business rules / state transitions / field constraints, one .md per module)
 CLAUDE.md                     Project conventions (declare your own directories/commands/login here); also tells the main conversation it is the dispatcher
 rule.md                       Technical pitfalls to avoid, in three sections: generic engineering lessons / component-library quirks / demo-site-only facts (delete that last one when you plug in your own site)

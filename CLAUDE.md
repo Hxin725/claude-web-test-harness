@@ -15,8 +15,8 @@
 
 | 场景 | 用户这样说 | 走的流程 |
 |---|---|---|
-| 有需求文档（PRD） | 「按 PRD 设计 <功能> 的测试用例，PRD 在 `<路径>`（设计图在 `<目录>`，可选）」 | 解构 → GATE 0 → 生成用例 → GATE 1 |
-| 只有网站，没有需求文档 | 「没有需求文档，帮我摸清 <站点/页面> 的 <功能> 并设计测试用例」 | **先探页面（page-map-sync 必跑）** → 解构（C 档，来源 = 实测）→ GATE 0 → 生成用例 → GATE 1 |
+| 有需求文档（PRD） | 「按 PRD 设计 <功能> 的测试用例，PRD 在 `<路径>`（设计图在 `<目录>`，可选）」 | 解构 → 需求拆解评审 → 生成用例 → 用例评审 |
+| 只有网站，没有需求文档 | 「没有需求文档，帮我摸清 <站点/页面> 的 <功能> 并设计测试用例」 | **先探页面（page-map-sync 必跑）** → 解构（C 档，来源 = 实测）→ 需求拆解评审 → 生成用例 → 用例评审 |
 | 要一路做到自动化 | 「给 <功能> 补完整测试，包括自动化代码」 | 上面任一种 → test-writing 自跑自修 → review |
 
 需求文档、设计图怎么准备，见 `README.zh-CN.md` 的「输入准备」一节。
@@ -57,7 +57,7 @@ python3 scripts/check_compliance.py --staged   # 只扫本次待提交的文件
 | 登录逻辑 | demo 全部只读，无需登录；接入时在 `conftest.py` 加登录 fixture |
 | 失败 DOM 落盘目录 | `data/debug/`（调试用，已 gitignore） |
 | 需求文档 / 设计图入档位置 | `artifacts/<task_id>/input/`、`artifacts/<task_id>/ui_design/`（两者已 gitignore，只留本地）（入档方式见 README「输入准备」） |
-| 产品知识库目录 | `specs/`（按模块一个 `.md`：业务规则、状态流转、字段约束的**已确认结论**；没有需求文档时，实测结论经 GATE 0 确认后回写这里） |
+| 产品知识库目录 | `specs/`（按模块一个 `.md`：业务规则、状态流转、字段约束的**已确认结论**；没有需求文档时，实测结论经需求拆解评审确认后回写这里） |
 
 ---
 
@@ -105,5 +105,5 @@ python3 tools/cases_export.py <task_id> --only-manual
 （搜索页匿名访问会被重定向到登录页，所以 demo 不含搜索。）
 
 主对话（orchestrator）会按需派发：
-`page-map-sync → test-case-design(阶段1解构→decomp.md，你审 GATE 0) → test-case-design(阶段2生成→cases.md+flow.md，你审 GATE 1) → test-writing → review`。
+`page-map-sync → test-case-design(阶段1解构→decomp.md，需求拆解评审) → test-case-design(阶段2生成→cases.md+flow.md，用例评审) → test-writing → review`。
 **只做只读流程**（浏览话题列表、打开帖子详情、断言渲染），不要自动化注册/登录/发帖。

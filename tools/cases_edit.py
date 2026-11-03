@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""用例的增删改 —— GATE 1 阶段由**用户**直接编辑 cases.md。
+"""用例的增删改 —— 用例评审阶段由**用户**直接编辑 cases.md。
 
 为什么允许改（推翻了原先「控制台只读」的设计）：
-GATE 1 的本质是**用户接管**。审核不该只有「通过 / 打回」两个动作 ——
+用例评审的本质是**用户接管**。审核不该只有「通过 / 打回」两个动作 ——
 看到用例写错了、少一条，就该能当场改。agent 的所有权在交付评审那一刻结束。
 
 安全前提（三条，缺一不可）：
   1. **首次编辑前存快照** `cases.pre_gate1.md` —— 既可回滚，也是评测信号
-     （人在 GATE 1 改了多少 = agent 准不准的直接读数）
+     （人在用例评审改了多少 = agent 准不准的直接读数）
   2. **改动全部记进只增不改的** `cases_edits.jsonl`（含改前值，可逐条回溯）
   3. **按用例 ID 定位而非行号** —— 行号会随编辑漂移，ID 不会
 
@@ -198,7 +198,7 @@ def _set_status(path: Path, new_status: str, note: str = "") -> bool:
 
 
 def confirm(task_id: str, by: str = "user") -> dict:
-    """GATE 1 一次性确认：整份 cases.md 通过，一个按钮，不逐条打勾。
+    """用例评审一次性确认：整份 cases.md 通过，一个按钮，不逐条打勾。
 
     只改状态字段（cases.md + flow.md 若存在），不动任何用例内容；
     改前状态必须是 pending_review，防止重复点击/误触把别的状态覆盖掉。
@@ -208,9 +208,9 @@ def confirm(task_id: str, by: str = "user") -> dict:
         raise FileNotFoundError(f"{p['cases']} 不存在")
     cur = _status(p["cases"])
     if cur != "pending_review":
-        raise ValueError(f"当前状态是 {cur!r}，不是 pending_review，不能确认（可能已经确认过，或还没到 GATE 1）")
+        raise ValueError(f"当前状态是 {cur!r}，不是 pending_review，不能确认（可能已经确认过，或还没到用例评审）")
     snap = _snapshot(task_id)
-    note = time.strftime("GATE 1 已审，%Y-%m-%d %H:%M")
+    note = time.strftime("用例评审完成，%Y-%m-%d %H:%M")
     changed_cases = _set_status(p["cases"], "confirmed", note)
     flow_path = p["dir"] / "flow.md"
     changed_flow = _set_status(flow_path, "confirmed", note) if flow_path.exists() else False

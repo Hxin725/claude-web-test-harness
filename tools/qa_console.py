@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """QA 控制台 —— **一个端口**，版本为锚，需求可切换。
 
-为什么合并：原先 GATE 0 评审台和用例执行台各起一个端口，一个版本十个需求
+为什么合并：原先需求拆解评审台和用例执行台各起一个端口，一个版本十个需求
 就要开二十个端口，荒谬。改成单端口 + 三级导航：
 
     版本（v2 / v1 / 未归版）→ 需求（task）→ 视图（解构清单 / 评审 / 执行）
@@ -11,10 +11,10 @@
 我来补充：「按模块看」里每条缺口旁边直接填「我知道的答案」，按行存 gap_fills.json，数据层见 tools/gap_fill.py。
 
 数据来源一律只读，写入只落这几类台账（都只增不改）：
-    artifacts/<task>/gate0_verdicts.json     ← GATE 0 裁决
+    artifacts/<task>/gate0_verdicts.json     ← 需求拆解评审裁决
     artifacts/<task>/gap_fills.json          ← 补缺口的答案（agent 读它回填 decomp.md）
     artifacts/_runs/{auto,manual}_runs.jsonl ← 执行记录
-（用户在 GATE 1 改用例是第三条写路径，走 tools/cases_edit.py，有快照有审计。）
+（用户在用例评审改用例是第三条写路径，走 tools/cases_edit.py，有快照有审计。）
 
 版本字段来自 `artifacts/<task>/state.md` frontmatter 的 `version:`（orchestrator 维护）。
 没有该字段的历史任务归入「未归版」—— **不做推断**，任务名里的 v1/v2 多是功能版本号
@@ -172,9 +172,9 @@ def discover() -> dict:
                 n_cards = len(build_cards(d.name)["cards"]) if st != "" else 0
                 answered = len(load_verdicts(d.name))
                 if st == "pending_review":
-                    badges.append({"k": "gate", "t": f"GATE 0 待审 {answered}/{n_cards}"})
+                    badges.append({"k": "gate", "t": f"需求拆解待审 {answered}/{n_cards}"})
                 elif n_cards:
-                    badges.append({"k": "ok", "t": f"GATE 0 已结 {answered}/{n_cards}"})
+                    badges.append({"k": "ok", "t": f"需求拆解已审 {answered}/{n_cards}"})
             except Exception as e:
                 badges.append({"k": "warn", "t": f"decomp 解析失败: {type(e).__name__}"})
 
@@ -190,7 +190,7 @@ def discover() -> dict:
                 if dv:
                     badges.append({"k": "warn", "t": f"分歧 {dv}"})
                 if cfm.get("status") == "pending_review":
-                    badges.append({"k": "gate", "t": "GATE 1 待审"})
+                    badges.append({"k": "gate", "t": "用例待审"})
             except Exception as e:
                 badges.append({"k": "warn", "t": f"cases 解析失败: {type(e).__name__}"})
 
@@ -635,7 +635,7 @@ const humanRef=s=>(s||'').replace(/([①-⑦])\s*[-:：]?\s*[A-Z]{1,2}(\d{1,3})(
 const md=s=>esc(s).replace(/&lt;br\s*\/?&gt;/gi,'<br>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code>$1</code>');
 const AS={passed:'通过',failed:'失败',error:'错误',skipped:'跳过',xfailed:'已知缺陷(预期失败)',xpassed:'意外通过',xpassed_strict:'⚠️意外通过(疑似已修复,待复核)'};
 const MS={pass:'通过',fail:'失败',blocked:'阻塞',skip:'跳过'};
-const VIEWNAME={decomp:'解构清单',gate0:'GATE 0 评审',cases:'用例执行'};
+const VIEWNAME={decomp:'解构清单',gate0:'需求拆解评审',cases:'用例执行'};
 
 function route(){
   const h=location.hash.replace(/^#\/?/,'').split('/');
@@ -706,7 +706,7 @@ function drawIndex(){
   }
   $('#app').innerHTML=h;
 }
-/* ── GATE 0 ── */
+/* ── 需求拆解评审 ── */
 function g0list(){return F==='all'?DATA.cards:DATA.cards.filter(c=>c.kind===F)}
 function drawGate0(){
   const cs=DATA.cards;
@@ -897,9 +897,9 @@ function drawCases(){
   let body=(ADDING?addForm():'')+
     `<div style="margin-bottom:12px"><button onclick="ADDING=true;draw()">＋ 新增用例</button>`+
     (gst==='pending_review'
-      ?`<button style="margin-left:8px;border-color:var(--gate);color:var(--gate)" onclick="confirmGate1()">✓ 标记 GATE 1 已审</button>`
+      ?`<button style="margin-left:8px;border-color:var(--gate);color:var(--gate)" onclick="confirmGate1()">✓ 标记用例评审完成</button>`
       :gst==='confirmed'
-        ?`<span class="pill" style="margin-left:8px;color:var(--ok);border-color:var(--ok)">GATE 1 已过审</span>`
+        ?`<span class="pill" style="margin-left:8px;color:var(--ok);border-color:var(--ok)">用例评审已过审</span>`
         :'')+
     `<span class="t" style="margin-left:10px;color:var(--ink3)">改动直接写进 cases.md，`+
     `首次编辑前自动存 cases.pre_gate1.md 快照，每次改动记入 cases_edits.jsonl</span></div>`;
@@ -1015,7 +1015,7 @@ function addForm(){
   return h;
 }
 async function confirmGate1(){
-  if(!confirm('整份 cases.md 标记为 GATE 1 已审？这一步不检查有没有逐条看过，确认前请自己确认已经看完。'))return;
+  if(!confirm('整份 cases.md 标记为用例评审完成？这一步不检查有没有逐条看过，确认前请自己确认已经看完。'))return;
   const r=await(await fetch(`/api/case/${encodeURIComponent(TASK)}`,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'confirm'})})).json();
   if(r.error)return alert('标记失败：'+r.error);
@@ -1296,7 +1296,7 @@ function drawDecompFlat(part){
 
   const M=D.meta;
   let h=`<div class="dmeta">`+(M.prd_version?`<span>需求版本：<b>${esc(M.prd_version)}</b></span>`:'')+
-    (M.status?`<span>解构状态：<b>${M.status==='confirmed'?'已过 GATE 0':M.status==='pending_review'?'GATE 0 待审':esc(M.status)}</b></span>`:'')+
+    (M.status?`<span>解构状态：<b>${M.status==='confirmed'?'已过需求拆解评审':M.status==='pending_review'?'需求拆解待审':esc(M.status)}</b></span>`:'')+
     (M.gate0_applied_at?`<span>回填于 ${esc(M.gate0_applied_at.slice(0,10))}</span>`:'')+
     (D.cases.has_cases?`<span>用例 <b>${D.cases.total}</b> 条</span>`:'<span style="color:var(--v-uncov)">还没生成用例（cases.md），验证进度一律"未覆盖"</span>')+
     (D.cases.unlinked.length?`<span title="${esc(D.cases.unlinked.map(x=>x.id).join(', '))}">${D.cases.unlinked.length} 条用例没回指任何解构行</span>`:'')+'</div>';
@@ -1344,7 +1344,7 @@ const DHELP=`<button class="x" onclick="hideDHelp()">✕</button><h3>解构清�
 <p class="lead">先看这个需求拆成了几个模块，每个模块下有哪些功能点；点开功能点看它的<b>控件</b>（什么情况下、显示什么、能不能点、文案是什么）、字段、规则，最后一段是<b>缺了哪些描述</b>。控件行的写法：<b>元素</b> · 什么时候（先要做什么）→ 状态，文案。</p>
 <p class="lead">「按表看」是原来的七张表逐行清单，「统计」是缺口地图和交叉表。</p>
 <h4>设计明确度：需求文档 / 设计图写清了没有</h4>
-<table><tr><td>确定</td><td>有出处：需求原文、设计图、你在 GATE 0 的裁决</td></tr>
+<table><tr><td>确定</td><td>有出处：需求原文、设计图、你在需求拆解评审的裁决</td></tr>
 <tr><td>推断</td><td>agent 按常理补的，没人确认过</td></tr>
 <tr><td>缺失</td><td>需求文档和设计图都没写，属于设计缺口</td></tr>
 <tr><td>冲突 / 缺帧</td><td>两处说法对不上 / 状态机里该有的状态没定义</td></tr>

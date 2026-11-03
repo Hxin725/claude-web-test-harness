@@ -59,9 +59,9 @@ artifacts/
     ui_design/                       ← UI 设计图（已 gitignore，接入方的设计稿通常未发布）
     state.md                         ← orchestrator 维护
     sync.md                          ← page-map-sync 产出
-    decomp.md                        ← test-case-design 阶段1 产出（结构化解构层：7 张表，GATE 0 单独审）
+    decomp.md                        ← test-case-design 阶段1 产出（结构化解构层：7 张表，需求拆解评审单独审）
     cases.md                         ← test-case-design 阶段2 产出（用例表，每条带 exec + derived_from 回指 decomp 表行 + prd_ref 回指原始依据）
-    flow.md                          ← test-case-design 阶段2 产出（操作流程对照单，GATE 1 与 cases.md 一并审）
+    flow.md                          ← test-case-design 阶段2 产出（操作流程对照单，用例评审与 cases.md 一并审）
     ops_review.md                    ← test-writing 阶段1产出（与 confirmed flow.md 的偏差清单；偏差=0 不触发 gate）
     impl.md                          ← test-writing 阶段2产出
     review.md                        ← review 产出（orchestrator 落盘）
@@ -114,13 +114,13 @@ created_at: 2026-06-22T10:30:00Z
 
 | Gate | 时机 | 用户动作 |
 |---|---|---|
-| **GATE 0: decomp.md 解构审核**（强制） | test-case-design **阶段1** 产出后 | 直接编辑 7 张表的 cell。**审六处**：①表①范围 ②所有标 `［需判断］` 的 `🔶推断` 行 ③所有标 `［需判断］` 的 `⚠️缺失` 行（知道答案的直接填）④表③ `⚠️未定义` 格子（未定义=应禁止？）⑤表⑥ 影响面 ⑥表⑦ 控件情境有没有漏角色或状态；审完回"确认" |
-| **GATE 1: cases.md + flow.md 审核**（强制，**提测前即可完成**） | test-case-design **阶段2** 产出后 | cases.md 审覆盖度 + 「未覆盖说明」是否成立 + **标 `exec` 例外**（默认全 `auto`，只改 `manual` / `blocked`）；flow.md **对照 UI 设计图**审操作流/文案字面值，不一致处加 `实际：…`；审完回"确认" |
-| **GATE 2: 偏差裁决**（条件触发） | test-writing 阶段1编码后，ops_review.md 偏差数 > 0 时 | 逐条二选一：`实际：…`（改断言跟实测）或 `产品bug：…`（xfail 挂号）；偏差=0 自动流转不打扰 |
+| **需求拆解评审（内部代号 GATE 0）：decomp.md**（强制） | test-case-design **阶段1** 产出后 | 直接编辑 7 张表的 cell。**审六处**：①表①范围 ②所有标 `［需判断］` 的 `🔶推断` 行 ③所有标 `［需判断］` 的 `⚠️缺失` 行（知道答案的直接填）④表③ `⚠️未定义` 格子（未定义=应禁止？）⑤表⑥ 影响面 ⑥表⑦ 控件情境有没有漏角色或状态；审完回"确认" |
+| **用例评审（内部代号 GATE 1）：cases.md + flow.md**（强制，**提测前即可完成**） | test-case-design **阶段2** 产出后 | cases.md 审覆盖度 + 「未覆盖说明」是否成立 + **标 `exec` 例外**（默认全 `auto`，只改 `manual` / `blocked`）；flow.md **对照 UI 设计图**审操作流/文案字面值，不一致处加 `实际：…`；审完回"确认" |
+| **偏差裁决（内部代号 GATE 2）**（条件触发） | test-writing 阶段1编码后，ops_review.md 偏差数 > 0 时 | 逐条二选一：`实际：…`（改断言跟实测）或 `产品bug：…`（xfail 挂号）；偏差=0 自动流转不打扰 |
 
 其他全部 agent 自动流转。
 
-> GATE 0 由来：需求 → cases.md 一跳太大，覆盖度不可审、缺口隐形（需求没写的表现为"没有那条
+> 需求拆解评审由来：需求 → cases.md 一跳太大，覆盖度不可审、缺口隐形（需求没写的表现为"没有那条
 > 用例"，而**缺席不引起注意**）、不积累。中间插入**结构化解构层**：需求/线上UI 先落成 7 张
 > 固定结构的表（功能点 / 字段规格 / 状态机 / 业务规则 / 操作旅程 / 影响面 / **控件规格**），
 > 每 cell 带「来源 + 置信度」，缺口从"没有用例"变成"表里一个显式的 ⚠️ 行"——**缺席变成在场**。
@@ -130,7 +130,7 @@ created_at: 2026-06-22T10:30:00Z
 >   （地图上有、表⑦ 里没有的元素 = **没有任何规格、无人守**）
 >
 > 生成用例退化成查表映射（表 × 方法，有数量下界），不再是 agent 的自由裁量。
-> **判断"这张表填得对不对"是人的强项，判断"这份清单全不全"是人的弱项**——GATE 0 就是把人
+> **判断"这张表填得对不对"是人的强项，判断"这份清单全不全"是人的弱项**——需求拆解评审就是把人
 > 放回他擅长的位置。
 >
 > **审阅层级（`［需判断］` / `［可提测］`）**：每个 `🔶推断` / `⚠️缺失` 行都要再判一次
@@ -141,7 +141,7 @@ created_at: 2026-06-22T10:30:00Z
 > 完整方法论（A/B/C 三档输入策略、分诊判据、生成映射、迭代闭环）见
 > [agents/decomposition.md](agents/decomposition.md)。
 
-> GATE 1 由来：**审核尽量前置到提测前的等待期**——UI 设计图提测前就有、用户看得到而 agent
+> 用例评审由来：**审核尽量前置到提测前的等待期**——UI 设计图提测前就有、用户看得到而 agent
 > 没喂过；按钮文案/弹窗流/导航层级/tab 顺序这类错误应死在 flow.md 审核（对照设计图辨认，
 > 分钟级），不该活到跑批（一次全量回归可能是小时级）。**任务起手就把 UI 设计图（截图/导出）
 > 给 test-case-design 当输入——agent 能读图。**提测后设计图上看不出的东西（maxlength、toast、
@@ -156,7 +156,7 @@ cases.md 每行的列：`# | ID | 优先级 | exec | 测试点 | 前置 | 步骤
 （各列怎么填见 [agents/test-case-design.md](agents/test-case-design.md)，此处只记跨 agent 的不变量。）
 
 `exec` ∈ `auto | manual | blocked`，**生产端 test-case-design 一律先填 `auto`，例外由用户在
-GATE 1 改**（agent 不自己判定）。它是一条**硬契约**，消费端 test-writing 必须遵守：
+用例评审改**（agent 不自己判定）。它是一条**硬契约**，消费端 test-writing 必须遵守：
 
 - `exec != auto` 的行 → **不得为其生成脚本**
 - `exec != auto` 的行 → **不得计入覆盖率分母**（否则覆盖率会被永远测不了的行拖成假低）
@@ -286,7 +286,7 @@ python3 scripts/journal.py show --follow             # 实时跟随当前任务
 
 - 「为 TesterHome 首页+搜索设计并写一套只读测试」← 完整流程
 - 「重新探索首页的页面地图」← 只走 page-map-sync
-- 「根据这份需求设计测试用例（需求贴在下面）」← 只走 test-case-design（阶段1，走到 GATE 0）
+- 「根据这份需求设计测试用例（需求贴在下面）」← 只走 test-case-design（阶段1，走到需求拆解评审）
 - 「审查我刚改的 test_home.py」← 只走 review
 
 orchestrator 自己判断该调哪些 agent、要不要 gate。
